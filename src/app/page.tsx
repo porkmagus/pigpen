@@ -2,9 +2,20 @@
 
 import { useEffect, useState, useRef } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
+
+interface SearchResult {
+  id: string; // Use primitive string
+  path: string;
+  title: string;
+  preview: string;
+  score: number;
+}
 
 export default function Home() {
   const [label, setLabel] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -28,6 +39,25 @@ export default function Home() {
     }
   }, []);
 
+  // Search execution
+  useEffect(() => {
+    if (label !== "hud" || !query) return;
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const searchResults = await invoke<SearchResult[]>("search_vault", { query });
+        setResults(searchResults);
+      } catch (e) {
+        console.error("Search failed:", e);
+      }
+    }, 150);
+
+    return () => {
+      clearTimeout(delayDebounceFn);
+      setResults([]); // Reset results on cleanup or query change
+    };
+  }, [query, label]);
+
   if (label === "hud") {
     return (
       <div className="hud-container">
@@ -38,20 +68,25 @@ export default function Home() {
             className="hud-input"
             placeholder="Search notes or type a command..."
             spellCheck={false}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
           />
           <kbd className="hud-shortcut">Ctrl K</kbd>
         </div>
-        <div className="hud-results-stub">
-          <div className="result-item selected">
-            <span className="icon">📄</span>
-            <span className="title">Welcome to Pigpen</span>
-            <span className="metadata">Recently Opened</span>
-          </div>
-          <div className="result-item">
-            <span className="icon">⚙️</span>
-            <span className="title">System Preferences</span>
-            <span className="metadata">Command</span>
-          </div>
+        <div className="hud-results">
+          {results.length > 0 ? (
+            results.map((res, i) => (
+              <div key={res.id} className={`result-item ${i === 0 ? 'selected' : ''}`}>
+                <span className="icon">📄</span>
+                <div className="content">
+                  <span className="title">{res.title}</span>
+                  <span className="preview" dangerouslySetInnerHTML={{ __html: res.preview }}></span>
+                </div>
+              </div>
+            ))
+          ) : query && (
+            <div className="no-results">No matches found for &quot;{query}&quot;</div>
+          )}
         </div>
         <style jsx>{`
           .hud-container {
@@ -89,7 +124,7 @@ export default function Home() {
             font-size: 12px;
             color: var(--text-secondary);
           }
-          .hud-results-stub {
+          .hud-results {
             padding: 8px;
             flex: 1;
             overflow-y: auto;
@@ -101,22 +136,40 @@ export default function Home() {
             border-radius: 8px;
             cursor: pointer;
             margin-bottom: 4px;
+            transition: background 0.1s;
           }
           .result-item.selected {
             background: rgba(255, 255, 255, 0.1);
+          }
+          .result-item:hover {
+            background: rgba(255, 255, 255, 0.05);
           }
           .result-item .icon {
             margin-right: 16px;
             font-size: 18px;
           }
-          .result-item .title {
+          .result-item .content {
+            display: flex;
+            flex-direction: column;
             flex: 1;
+            overflow: hidden;
+          }
+          .result-item .title {
             font-size: 14px;
             font-weight: 500;
           }
-          .result-item .metadata {
+          .result-item .preview {
             font-size: 12px;
             color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .no-results {
+            padding: 32px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 14px;
           }
         `}</style>
       </div>
@@ -136,6 +189,12 @@ export default function Home() {
       <main className="dashboard-content">
         <h1>Dashboard</h1>
         <p>The persistent organizational layer for your knowledge vault.</p>
+        <button
+          className="config-button"
+          onClick={() => alert("Vault selection coming in Phase 5")}
+        >
+          Select Vault Folder
+        </button>
       </main>
       <style jsx>{`
         .dashboard-container {
@@ -168,6 +227,16 @@ export default function Home() {
         .dashboard-content {
           flex: 1;
           padding: 48px;
+        }
+        .config-button {
+            margin-top: 24px;
+            background: var(--accent-color);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
         }
         h1 { margin-bottom: 16px; }
       `}</style>
